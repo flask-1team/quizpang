@@ -354,6 +354,36 @@ class DBManager:
         """
         # MariaDB는 랭킹을 직접 계산하지 않으므로, 애플리케이션 레벨에서 처리할 수 있도록 점수 데이터만 제공
         return self.execute_query(sql)
+    
+    # ------------------
+    # 3. 공통 DB 메서드 (핵심 구현)
+    # ------------------
+
+    def execute_query(self, sql: str, params=None, fetchone=False):
+        """SELECT 쿼리를 실행하고 결과를 반환합니다."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params)
+                if fetchone:
+                    return cursor.fetchone()
+                return cursor.fetchall()
+        except pymysql.Error as e:
+            logger.error(f"쿼리 실행 실패: {sql}, 오류: {e}")
+            raise
+
+    def execute_non_query(self, sql: str, params=None) -> int:
+        """INSERT, UPDATE, DELETE 쿼리를 실행하고 영향을 받은 행 수를 반환합니다."""
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                row_count = cursor.execute(sql, params)
+            conn.commit()
+            return row_count
+        except pymysql.Error as e:
+            logger.error(f"Non-Query 실행 실패: {sql}, 오류: {e}")
+            conn.rollback()
+            raise
 
 
 # 싱글톤 패턴을 위한 전역 변수
