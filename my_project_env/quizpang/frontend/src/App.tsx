@@ -81,14 +81,36 @@ const App: React.FC = () => {
     const [activeQuizMode, setActiveQuizMode] = useState<QuizMode>('study');
     const [activeTimerConfig, setActiveTimerConfig] = useState<TimerConfig>({ mode: 'total', duration: 300 });
 
-    const [quizzes, setQuizzes] = useState<Quiz[]>(mockQuizzes);
-    const [questions, setQuestions] = useState<Record<number, Question[]>>(mockQuestions);
+    //const [quizzes, setQuizzes] = useState<Quiz[]>(mockQuizzes);
+
+    // 처음엔 빈 배열로 두는 걸 추천 (mockQuizzes 대신)
+    const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+
+    //const [questions, setQuestions] = useState<Record<number, Question[]>>(mockQuestions);
+    // ✅ 변경
+    const [questions, setQuestions] = useState<Record<number, Question[]>>({});
     const [users, setUsers] = useState<User[]>(mockUsers);
     const [quizHistory, setQuizHistory] = useState<QuizAttempt[]>(mockHistory);
 
 
+    //const [isLoggedIn, setIsLoggedIn] = useState(false);
+    //const [currentUser, setCurrentUser] = useState<string | null>(null);
+
+    // 추가/교체 (username과 userId를 분리)
     const [isLoggedIn, setIsLoggedIn] = useState(false);
-    const [currentUser, setCurrentUser] = useState<string | null>(null);
+    const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+        // 앱 시작 시 로컬스토리지에서 로그인 상태 복원
+    useEffect(() => {
+        const uid = localStorage.getItem('qp.user_id');
+        const uname = localStorage.getItem('qp.username');
+        if (uid && uname) {
+            setIsLoggedIn(true);
+            setCurrentUserId(uid);
+            setCurrentUserName(uname);
+        }
+    }, []);
 
     const [alert, setAlert] = useState<{ isOpen: boolean; message: string }>({ isOpen: false, message: '' });
 
@@ -106,6 +128,40 @@ const App: React.FC = () => {
         }
     }, []);
 
+    useEffect(() => {
+        loadQuizzes();          // ✅ 앱 시작할 때 서버 목록으로 동기화
+    }, []);
+
+
+    // 서버에서 퀴즈 목록 가져오기
+  const loadQuizzes = async () => {
+    try {
+      const res = await fetch(`http://localhost:5001/api/quiz/list`);
+      if (res.ok) {
+        const list: Quiz[] = await res.json();
+        setQuizzes(list);
+      } else {
+        console.error('quiz/list failed', await res.text());
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const loadQuestions = async (quizId: number) => {
+    // 이미 로드해둔 경우 재요청 생략
+    if (questions[quizId]?.length) return;
+
+    const res = await fetch(`http://localhost:5001/api/quiz/${quizId}/questions`);
+    if (!res.ok) {
+        console.error('loadQuestions failed', await res.text());
+        showCustomAlert('문제를 불러오지 못했습니다.');
+        return;
+    }
+    const data = await res.json();              // { quiz: {...}, questions: [...] }
+    setQuestions(prev => ({ ...prev, [quizId]: data.questions }));
+  };
+
     const showCustomAlert = (message: string) => {
         setAlert({ isOpen: true, message });
     };
@@ -121,62 +177,117 @@ const App: React.FC = () => {
         window.scrollTo(0, 0);
     };
     
+   
     const handleLogin = (username: string) => {
+        // LoginPage에서 로그인 성공 시 localStorage에 이미 저장했다고 가정
+        const uid = localStorage.getItem('qp.user_id');   // 백엔드 응답의 user_id
         setIsLoggedIn(true);
-        setCurrentUser(username);
+        setCurrentUserName(username);
+        setCurrentUserId(uid || null);
         showCustomAlert(`${username}님, 환영합니다!`);
         handleNavigate('home');
     };
 
     const handleLogout = () => {
         setIsLoggedIn(false);
-        setCurrentUser(null);
+        setCurrentUserName(null);
+        setCurrentUserId(null);
+        // 필요하면 localStorage도 정리
+        localStorage.removeItem('qp.user_id'); localStorage.removeItem('qp.username');
         showCustomAlert('성공적으로 로그아웃되었습니다.');
         handleNavigate('home');
     };
+
 
     const handleSignUp = (username: string) => {
         // In a real app, this would involve API calls. Here, we'll just log the user in.
         handleLogin(username);
     };
 
-    const handleSaveQuiz = (newQuiz: Quiz, newQuestions: Question[]) => {
-        const updatedQuizzes = [...quizzes, newQuiz];
-        const updatedQuestions = { ...questions, [newQuiz.quiz_id]: newQuestions };
-        setQuizzes(updatedQuizzes);
-        setQuestions(updatedQuestions);
+
+    const handleSaveQuiz = async (newQuiz: Quiz, newQuestions: Question[]) => {
+        // 기존 로컬 추가 로직을 유지해도 되지만,
+        // 최종 진실원본은 서버이므로 저장 직후 동기화 한 번!
+        // setQuizzes(prev => [...prev, newQuiz]);
+        // setQuestions(prev => ({ ...prev, [newQuiz.quiz_id]: newQuestions }));
+        await loadQuizzes();     // ✅ 저장 후 서버 기준 재동기화
     };
     
-    const handleRateQuestion = (quizId: number, questionId: number, rating: number) => {
-        const updatedQuestions = { ...questions };
-        const quizQuestions = updatedQuestions[quizId];
-        if (quizQuestions) {
-            const questionIndex = quizQuestions.findIndex(q => q.id === questionId);
-            if (questionIndex !== -1) {
-                const question = quizQuestions[questionIndex];
-                const newTotalScore = (question.votes_avg * question.votes_count) + rating;
-                const newVotesCount = question.votes_count + 1;
-                question.votes_avg = newTotalScore / newVotesCount;
-                question.votes_count = newVotesCount;
-                setQuestions(updatedQuestions);
+
+    const handleRateQuestion = async (quizId: number, questionId: number, rating: number) => {
+        try {
+            // 1) 서버에 반영
+            const res = await fetch('http://localhost:5001/api/question/rate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ questionId, rating }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                console.error('rate failed', err);
+                showCustomAlert(err.error || '평가 저장에 실패했습니다.');
+                return;
             }
+
+            // 2) 문제/퀴즈 데이터 재동기화
+            await loadQuestions(quizId);   // 해당 퀴즈의 문제들(평점/카운트 포함) 최신화
+            await loadQuizzes();           // 카드에 쓰는 quizzes 갱신 => 카드 평점 즉시 반영
+
+            showCustomAlert('평가가 반영되었습니다.');
+        } catch (e) {
+            console.error(e);
+            showCustomAlert('평가 저장 중 오류가 발생했습니다.');
         }
     };
-    
-    const handleQuizCompletion = (quizId: number, score: number, totalQuestions: number, mode: QuizMode) => {
-        if (!currentUser) return; // Only save history if logged in
 
-        const newAttempt: QuizAttempt = {
-            attemptId: Date.now(),
-            quizId,
-            userId: currentUser, // Using username as ID for mock purposes
-            score,
-            totalQuestions,
-            date: Date.now(),
-            mode,
-        };
-        setQuizHistory(prevHistory => [...prevHistory, newAttempt]);
+    
+
+    const handleQuizCompletion = async (
+            quizId: number,
+            score: number,
+            totalQuestions: number,
+            mode: QuizMode
+        ) => {
+        // 로그인 안 했으면 저장하지 않음
+        const uid = currentUserId || localStorage.getItem('qp.user_id') || '';
+        if (!uid) return;
+
+        try {
+            // ✅ 백엔드에 기록 저장 (학습/시험 모드 모두 저장)
+            const res = await fetch('http://localhost:5001/api/attempt/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: uid,            // 문자열 ID (DB의 User.id)
+                quizId,                 // 방금 푼 퀴즈의 quiz_id
+                score,
+                totalQuestions,
+                mode,                   // 'study' 또는 'exam'
+            }),
+            });
+
+            if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error('attempt/save failed', err);
+            showCustomAlert(err.error || '기록 저장에 실패했습니다.');
+            }
+
+            // ✅ 저장 후 내 기록 다시 불러오기
+            const histRes = await fetch(`http://localhost:5001/api/history/${uid}`);
+            if (histRes.ok) {
+            const historyFromServer = await histRes.json();
+            setQuizHistory(historyFromServer); // 서버 규격과 동일한 필드로 내려온다고 가정
+            }
+
+            // 원하면 자동 이동
+            // handleNavigate('history');
+
+        } catch (e) {
+            console.error(e);
+            showCustomAlert('기록 저장 중 오류가 발생했습니다.');
+        }
     };
+
 
     // 퀴즈 목록 페이지에서 퀴즈를 선택할 때 모드 선택 모달을 열도록 상태를 설정하는 함수
     const handleSelectQuizForModal = (quiz: Quiz) => {
@@ -187,12 +298,19 @@ const App: React.FC = () => {
     // const handleSelectQuiz = (quizId: number) => { ... } // 삭제됨
     // const [selectedQuiz, setSelectedQuiz] = useState<Quiz | null>(null); // 삭제됨
 
+
     const handleStartQuiz = (quizId: number, mode: QuizMode, timerConfig: TimerConfig) => {
         setQuizForModeSelection(null);
         setActiveQuizMode(mode);
         setActiveTimerConfig(timerConfig);
-        handleNavigate('quizGame', quizId);
+
+        // 비동기 호출을 즉시 실행해서 반환 타입은 여전히 void
+        (async () => {
+            await loadQuestions(quizId);
+            handleNavigate('quizGame', quizId);
+        })();
     };
+
 
     // 라인 170~176의 중복된 렌더링 JSX 블록도 제거했습니다.
     // {currentPage === 'quizList' && ( ... )} // 삭제됨
@@ -236,7 +354,25 @@ const App: React.FC = () => {
             case 'ranking':
                 return <RankingPage quizzes={quizzes} users={users} onNavigate={handleNavigate} />;
             case 'history':
-                return <HistoryPage history={quizHistory} quizzes={quizzes} currentUser={currentUser} onNavigate={handleNavigate} />;
+                return (
+                    <HistoryPage
+                    history={quizHistory}
+                    quizzes={quizzes}
+                    currentUser={currentUserId}
+                    onNavigate={handleNavigate}
+                    onSelectQuiz={(quizId) => {
+                        const q = quizzes.find(qz => qz.quiz_id === quizId);
+                        if (q) {
+                        // 기존 모달 열어주는 핸들러 재사용
+                        setQuizForModeSelection(q);
+                        } else {
+                        // 목록으로 이동 + 안내
+                        handleNavigate('quizList');
+                        showCustomAlert('해당 퀴즈 정보를 목록에서 찾을 수 없어 목록으로 이동합니다.');
+                        }
+                    }}
+                    />
+                );
             case 'home':
             default:
                 return <HomePage onNavigate={handleNavigate} />;
@@ -245,7 +381,7 @@ const App: React.FC = () => {
 
     return (
         <div className="flex flex-col min-h-screen font-sans text-gray-800">
-            <Header onNavigate={handleNavigate} isLoggedIn={isLoggedIn} currentUser={currentUser} onLogout={handleLogout} />
+            <Header onNavigate={handleNavigate} isLoggedIn={isLoggedIn} currentUser={currentUserName} onLogout={handleLogout} />
             <div className="flex-grow">
                 {renderPage()}
             </div>

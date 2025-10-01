@@ -244,10 +244,30 @@ class DBManager:
             raise
 
             
+
     def get_all_quizzes(self):
-        """모든 퀴즈 목록을 조회합니다. (HomePage.tsx, HistoryPage.tsx, RankingPage.tsx 연동)"""
-        sql = "SELECT quiz_id, title, category, creator_id, votes_avg, votes_count, questions_count FROM Quiz ORDER BY created_at DESC"
+        sql = """
+        SELECT
+            q.quiz_id,
+            q.title,
+            q.category,
+            q.creator_id,
+            COUNT(qq.id) AS questions_count,
+            IFNULL(SUM(qq.votes_count), 0) AS votes_count,
+            IFNULL(
+                CASE WHEN SUM(qq.votes_count) > 0
+                    THEN SUM(qq.votes_avg * qq.votes_count) / SUM(qq.votes_count)
+                    ELSE 0
+                END, 0
+            ) AS votes_avg
+        FROM Quiz q
+        LEFT JOIN Question qq ON qq.quiz_id = q.quiz_id
+        GROUP BY q.quiz_id, q.title, q.category, q.creator_id
+        ORDER BY q.quiz_id DESC;
+        """
         return self.execute_query(sql)
+
+
 
     def get_quiz_by_id(self, quiz_id):
         """단일 퀴즈 정보를 조회합니다."""
@@ -266,58 +286,48 @@ class DBManager:
         # TEXT 타입에 JSON 문자열이 저장되었다면 json.loads 처리가 필요할 수 있음
         return questions
 
-    def update_question_rating(self, question_id, rating):
-        """문제 평점을 업데이트하고 새 평균을 반환합니다. (QuizGamePage.tsx 평점 기능)"""
-        conn = self._get_connection()
-        try:
-            with conn.cursor() as cursor:
-                # 1. 현재 평점 정보 조회
-                select_sql = "SELECT votes_avg, votes_count FROM Question WHERE id = %s"
-                cursor.execute(select_sql, (question_id,))
-                q = cursor.fetchone()
-                
-                if not q:
-                    raise ValueError("Question not found")
-                    
-                # 2. 새로운 가중 평균 계산
-                current_total_score = q['votes_avg'] * q['votes_count']
-                new_votes_count = q['votes_count'] + 1
-                new_total_score = current_total_score + rating
-                new_votes_avg = new_total_score / new_votes_count
-                
-                # 3. 평점 업데이트
-                update_sql = """
-                    UPDATE Question 
-                    SET votes_avg = %s, votes_count = %s 
-                    WHERE id = %s
-                """
-                cursor.execute(update_sql, (new_votes_avg, new_votes_count, question_id))
-                
-                conn.commit()
-                return new_votes_avg
-        except pymysql.Error as e:
-            logger.error(f"문제 평점 업데이트 실패: {e}")
-            conn.rollback()
-            raise
 
+    
+    def update_question_rating(self, question_id: int, rating: int):
+        # (avg * count + rating) / (count + 1)
+        update_sql = """
+            UPDATE Question
+            SET votes_avg = (votes_avg * votes_count + %s) / (votes_count + 1),
+                votes_count = votes_count + 1
+            WHERE id = %s
+        """
+        self.execute_non_query(update_sql, (rating, question_id))
+
+        # 갱신된 평균을 다시 읽어서 반환
+        row = self.execute_query(
+            "SELECT votes_avg FROM Question WHERE id = %s",
+            (question_id,), fetchone=True
+        )
+        return row["votes_avg"] if row else None
+
+
+
+
+    
     def add_quiz_attempt(self, attempt_data):
         """사용자의 퀴즈 풀이 기록을 저장합니다. (QuizGamePage.tsx 완료 시)"""
         sql = """
             INSERT INTO QuizAttempt (user_id, quiz_id, score, total_questions, mode, date)
             VALUES (%s, %s, %s, %s, %s, %s);
         """
-        # date는 프론트엔드에서 UNIX timestamp (ms)를 사용하므로 서버에서 생성
-        attempt_data['date'] = int(time.time() * 1000) 
-        
-        row_count = self.execute_non_query(sql, (
+        # 서버에서 timestamp(ms) 생성
+        attempt_data['date'] = int(time.time() * 1000)
+
+        # ✅ 여기서 'quiz_id'를 사용 (엔드포인트에서 quizId -> quiz_id 로 변환됨)
+        return self.execute_non_query(sql, (
             attempt_data['userId'],
-            attempt_data['quizId'],
+            attempt_data['quiz_id'],     # <-- 핵심 수정
             attempt_data['score'],
             attempt_data['totalQuestions'],
             attempt_data['mode'],
             attempt_data['date']
-        ))
-        return row_count > 0
+        )) > 0
+
 
     def get_user_attempts(self, user_id):
         """특정 사용자의 모든 풀이 기록을 최신순으로 조회합니다. (HistoryPage.tsx)"""
