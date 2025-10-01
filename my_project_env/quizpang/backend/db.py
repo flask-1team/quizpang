@@ -139,7 +139,7 @@ class DBManager:
             raise
         
         # Mock User 데이터 생성 (frontend `creator_id: 'CurrentUser (Mock)'` 대응)
-        self.add_mock_users()
+        # self.add_mock_users()
 
     # ------------------
     # 3. 공통 DB 메서드 (기존 유지 + 일부 수정)
@@ -151,45 +151,31 @@ class DBManager:
     # 편의상 기존에 제공된 로직을 재사용 및 확장합니다. 
     # 기존 `db.py`에 있는 `execute_query`, `execute_non_query`, `execute_transaction` 등은 그대로 있다고 가정하고,
     # 퀴즈 관련 신규 메서드만 추가/수정합니다.
-
-    def add_mock_users(self):
-        """Mock 사용자가 없으면 추가합니다."""
-        # 실제 사용자 ID가 필요하므로 임시 ID를 사용합니다.
-        mock_user_id = 'mock_user_1' 
-        try:
-            user = self.get_user_by_id(mock_user_id)
-            if not user:
-                sql = "INSERT INTO User (id, username, email, password_hash) VALUES (%s, %s, %s, %s)"
-                # 비밀번호 해시는 auth.py의 hash_password를 사용해야 하지만, 여기서는 더미 값으로 처리
-                dummy_hash = 'dummypasswordhash' 
-                self.execute_non_query(sql, (mock_user_id, 'MockCreator', 'mock@quizpang.com', dummy_hash))
-                logger.info(f"Mock user {mock_user_id} 생성 완료.")
-        except Exception as e:
-            logger.warning(f"Mock user 생성 중 오류 발생: {e}")
             
     def get_user_by_id(self, user_id: str):
         """사용자 ID로 사용자 정보를 조회합니다."""
-        sql = "SELECT id, username, email FROM `user` WHERE id = %s"
+        sql = "SELECT id, username, email FROM user WHERE id = %s"
         user = self.execute_query(sql, (user_id,), fetchone=True)
         return user
         
     def get_user_by_email(self, email: str):
         """이메일 주소로 사용자 정보를 조회합니다."""
-        sql = "SELECT id, username, email, password_hash FROM `user` WHERE email = %s"
+        sql = "SELECT id, username, email, password_hash FROM user WHERE email = %s"
         # execute_query는 DBManager 클래스에 이미 정의되어 있습니다.
         # 이 메서드를 호출하여 쿼리를 실행합니다.
         user = self.execute_query(sql, (email,), fetchone=True)
         return user
     
-    def create_user(self, username: str, email: str, password_hash: str) -> int:
+    def create_user(self,new_user_id, username: str, email: str, password_hash: str) -> int:
         """새로운 사용자를 생성하고 ID를 반환합니다."""
         try:
+
             # 이메일 중복 확인
             if self.get_user_by_email(email):
                 raise ValueError(f"Email '{email}' already exists.")
                 
-            sql = "INSERT INTO `user` (username, email, password_hash) VALUES (%s, %s, %s)"
-            self.execute_non_query(sql, (username, email, password_hash))
+            sql = "INSERT INTO user (id ,username, email, password_hash) VALUES (%s,%s, %s, %s)"
+            self.execute_non_query(sql, (new_user_id,username, email, password_hash))
             
             # 마지막으로 삽입된 ID 반환
             conn = self._get_connection()
