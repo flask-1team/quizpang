@@ -1,5 +1,6 @@
 import logging
 import hashlib
+import random
 from flask import Blueprint, request, jsonify
 from db import get_db_manager
 from flask_cors import CORS 
@@ -33,6 +34,9 @@ def signup():
         email = data.get('email')
         password = data.get('password')
         
+        # 7자리 랜덤 숫자 문자열 ID 생성
+        new_user_id = str(random.randint(1000000, 9999999))
+        
         if not all([username, email, password]):
             return jsonify({"error": "Missing required fields (username, email, password)"}), 400
         
@@ -40,7 +44,7 @@ def signup():
         password_hash = hash_password(password)
         
         # 사용자 생성 및 ID 반환
-        user_id = db_manager.create_user(username, email, password_hash)
+        user_id = db_manager.create_user(new_user_id,username, email, password_hash)
         
         # 성공 응답
         return jsonify({
