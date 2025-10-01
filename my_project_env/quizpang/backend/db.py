@@ -167,15 +167,15 @@ class DBManager:
         except Exception as e:
             logger.warning(f"Mock user 생성 중 오류 발생: {e}")
             
-    def get_user_by_id(self, user_id: int):
+    def get_user_by_id(self, user_id: str):
         """사용자 ID로 사용자 정보를 조회합니다."""
-        sql = "SELECT id, username, email FROM users WHERE id = %s"
+        sql = "SELECT id, username, email FROM `user` WHERE id = %s"
         user = self.execute_query(sql, (user_id,), fetchone=True)
         return user
         
     def get_user_by_email(self, email: str):
         """이메일 주소로 사용자 정보를 조회합니다."""
-        sql = "SELECT id, username, email, password_hash FROM users WHERE email = %s"
+        sql = "SELECT id, username, email, password_hash FROM `user` WHERE email = %s"
         # execute_query는 DBManager 클래스에 이미 정의되어 있습니다.
         # 이 메서드를 호출하여 쿼리를 실행합니다.
         user = self.execute_query(sql, (email,), fetchone=True)
@@ -188,7 +188,7 @@ class DBManager:
             if self.get_user_by_email(email):
                 raise ValueError(f"Email '{email}' already exists.")
                 
-            sql = "INSERT INTO users (username, email, password_hash) VALUES (%s, %s, %s)"
+            sql = "INSERT INTO `user` (username, email, password_hash) VALUES (%s, %s, %s)"
             self.execute_non_query(sql, (username, email, password_hash))
             
             # 마지막으로 삽입된 ID 반환
@@ -210,48 +210,53 @@ class DBManager:
     # ------------------
     
     def add_quiz_and_questions(self, quiz_data):
-        """퀴즈와 문제들을 하나의 트랜잭션으로 저장합니다."""
         conn = self._get_connection()
         try:
             with conn.cursor() as cursor:
-                # 1. Quiz 삽입
                 quiz_sql = """
-                    INSERT INTO Quiz (title, category, creator_id, questions_count)
-                    VALUES (%s, %s, %s, %s);
+                    INSERT INTO `quiz` (title, category, creator_id, questions_count)
+                    VALUES (%s, %s, %s, %s)
                 """
-                cursor.execute(quiz_sql, (
-                    quiz_data['title'], 
-                    quiz_data['category'], 
-                    quiz_data['creator_id'], 
-                    len(quiz_data['questions'])
-                ))
-                quiz_id = cursor.lastrowid # 삽입된 퀴즈의 ID
+                cursor.execute(
+                    quiz_sql,
+                    (quiz_data['title'], quiz_data['category'], quiz_data['creator_id'], len(quiz_data['questions']))
+                )
+                quiz_id = cursor.lastrowid
 
-                # 2. Question들 삽입
+                # ✅ options 처리: 프론트가 문자열로 주면 그대로, 파이썬 list/dict면 dumps
                 question_sql = """
-                    INSERT INTO Question (quiz_id, type, text, options, correct_answer, explanation)
-                    VALUES (%s, %s, %s, %s, %s, %s);
+                    INSERT INTO `question`
+                    (quiz_id, type, text, options, correct_answer, explanation)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """
                 for q in quiz_data['questions']:
-                    # options는 프론트엔드에서 JSON 문자열을 보낼 것이므로, JSON.dumps 대신 그대로 사용하거나 (JSON 타입인 경우) JSON.dumps를 한번 더 방어적으로 처리
-                    # 여기서는 MariaDB의 JSON 타입에 맞춰 JSON.dumps를 적용
-                    options_json = json.dumps(q.get('options')) if q.get('options') else None
-                    
-                    cursor.execute(question_sql, (
-                        quiz_id,
-                        q['type'],
-                        q['text'],
-                        options_json,
-                        q['correct_answer'],
-                        q.get('explanation', '')
-                    ))
-                
+                    opts = q.get('options', None)
+                    if opts is None:
+                        options_json = None
+                    elif isinstance(opts, str):
+                        options_json = opts.strip()  # 이미 JSON 문자열
+                    else:
+                        options_json = json.dumps(opts, ensure_ascii=False)
+
+                    cursor.execute(
+                        question_sql,
+                        (
+                            quiz_id,
+                            q['type'],
+                            q['text'],
+                            options_json,
+                            q['correct_answer'],
+                            q.get('explanation', '')
+                        )
+                    )
+
                 conn.commit()
                 return quiz_id
         except pymysql.Error as e:
             logger.error(f"퀴즈 및 문제 저장 트랜잭션 실패: {e}")
             conn.rollback()
             raise
+
             
     def get_all_quizzes(self):
         """모든 퀴즈 목록을 조회합니다. (HomePage.tsx, HistoryPage.tsx, RankingPage.tsx 연동)"""

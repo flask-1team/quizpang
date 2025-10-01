@@ -18,20 +18,27 @@ logger = logging.getLogger(__name__)
 # ------------------------------------
 # 1. 퀴즈 생성 API (POST /api/quiz/create) - QuizCreationPage.tsx 연동
 # ------------------------------------
+
 @quiz_bp.route('/quiz/create', methods=['POST'])
 def create_quiz():
     db_manager = get_db_manager()
     if not db_manager:
         return jsonify({"error": "Database connection is not available."}), 500
 
-    data = request.get_json()
-    if not all(key in data for key in ['title', 'category', 'creator_id', 'questions']):
+    data = request.get_json() or {}
+
+    required = ['title', 'category', 'creator_id', 'questions']
+    if not all(k in data for k in required):
         return jsonify({"error": "Missing required fields for quiz creation."}), 400
 
-    # Frontend의 Mock ID를 실제 DB ID로 처리 (db.py의 add_mock_users와 연동)
-    if data['creator_id'] == 'CurrentUser (Mock)':
-        data['creator_id'] = 'mock_user_1' 
-        
+    # ✅ creator_id 정규화 (공백 제거 + mock 문자열 → 실제 존재하는 id)
+    creator = str(data.get('creator_id', '')).strip()
+    if creator in ('CurrentUser (Mock)', 'mock', 'mock_user'):
+        creator = 'mock_user_1'   # 이미 user.id 에 존재 (DBeaver로 확인 완료)
+
+    data['creator_id'] = creator
+    logger.info(f"[create_quiz] normalized creator_id = {data['creator_id']!r}")
+
     try:
         quiz_id = db_manager.add_quiz_and_questions(data)
         return jsonify({
@@ -39,10 +46,10 @@ def create_quiz():
             "quiz_id": quiz_id,
             "creator_id": data['creator_id']
         }), 201
-
     except Exception as e:
         logger.error(f"Quiz creation failed: {e}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500
+
 
 
 # ------------------------------------
