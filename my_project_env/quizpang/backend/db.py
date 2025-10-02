@@ -262,6 +262,32 @@ class DBManager:
             logger.error(f"퀴즈 및 문제 저장 트랜잭션 실패: {e}")
             conn.rollback()
             raise
+ 
+    def get_created_quizzes_by_user(self, user_id: str):
+        sql = """
+            SELECT
+                q.quiz_id,
+                q.title,
+                -- 문제 수는 Question 개수로 계산
+                COUNT(qq.id) AS questions_count,
+                -- 총 투표 수
+                IFNULL(SUM(qq.votes_count), 0) AS votes_count,
+                -- 가중 평균(투표 수 기준)
+                IFNULL(
+                    CASE WHEN SUM(qq.votes_count) > 0
+                        THEN SUM(qq.votes_avg * qq.votes_count) / SUM(qq.votes_count)
+                        ELSE 0
+                    END, 0
+                ) AS votes_avg,
+                q.created_at
+            FROM Quiz q
+            LEFT JOIN Question qq ON qq.quiz_id = q.quiz_id
+            WHERE q.creator_id = %s
+            GROUP BY q.quiz_id, q.title, q.created_at
+            ORDER BY q.created_at DESC
+        """
+        return self.execute_query(sql, (user_id,))
+
 
             
 

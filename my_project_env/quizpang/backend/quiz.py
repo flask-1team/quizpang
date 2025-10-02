@@ -308,3 +308,37 @@ def get_ranking():
     except Exception as e:
         logger.error(f"Ranking fetch failed: {e}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500
+    
+@quiz_bp.route('/my/summary/<string:user_id>', methods=['GET'])
+def get_my_summary(user_id):
+        db = get_db_manager()
+        if not db:
+            return jsonify({"error": "Database connection is not available."}), 500
+
+        try:
+            attempts = db.get_user_attempts(user_id) or []
+            created  = db.get_created_quizzes_by_user(user_id) or []
+
+            return jsonify({
+                "attempts": [{
+                    "attemptId": a['attempt_id'],
+                    "userId": a['user_id'],
+                    "quizId": a['quiz_id'],
+                    "score": a['score'],
+                    "totalQuestions": a['total_questions'],
+                    "mode": a['mode'],
+                    "date": a['date'],
+                } for a in attempts],
+                "created": [{
+                    "quizId": c['quiz_id'],
+                    "title": c['title'],
+                    "questionsCount": c['questions_count'],
+                    "votesAvg": float(c['votes_avg'] or 0),
+                    "votesCount": int(c['votes_count'] or 0),
+                    "createdAt": c['created_at'].isoformat() if c['created_at'] else None,
+                } for c in created]
+            }), 200
+        except Exception as e:
+            logger.exception(f"/my/summary failed: {e}")
+            return jsonify({"error": f"Server error: {str(e)}"}), 500
+
