@@ -21,13 +21,13 @@ const Header: React.FC<HeaderProps> = ({ onNavigate, isLoggedIn, currentUser, on
                         <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('keyFeatures'); }} className="hover:text-violet-700 transition duration-150">주요 기능</a>
                         <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('quizCategories'); }} className="hover:text-violet-700 transition duration-150">퀴즈 종류</a>
                         <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('projectGoals'); }} className="hover:text-violet-700 transition duration-150">프로젝트 목표</a>
-                        <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('ranking'); }} className="hover:text-violet-700 transition duration-150">명예의 전당</a>
+                        {/* <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('ranking'); }} className="hover:text-violet-700 transition duration-150">명예의 전당</a> */}
                     </nav>
 
                     <div className="flex items-center space-x-4">
                         {isLoggedIn ? (
                             <>
-                                <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('history'); }} className="text-gray-600 font-semibold hover:text-violet-700 transition duration-150 hidden sm:block">나의 기록</a>
+                                {/* <a href="#" onClick={(e) => { e.preventDefault(); onNavigate('history'); }} className="text-gray-600 font-semibold hover:text-violet-700 transition duration-150 hidden sm:block">나의 기록</a> */}
                                 <span className="text-gray-600 font-semibold hidden sm:block">환영합니다, {currentUser}님!</span>
                                 <button onClick={onLogout} className="bg-gray-200 text-gray-800 px-4 py-2 rounded-full text-sm font-semibold shadow-sm hover:bg-gray-300 transition duration-150">
                                     로그아웃

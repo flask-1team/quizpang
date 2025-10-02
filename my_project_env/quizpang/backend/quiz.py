@@ -18,31 +18,41 @@ logger = logging.getLogger(__name__)
 # ------------------------------------
 # 1. 퀴즈 생성 API (POST /api/quiz/create) - QuizCreationPage.tsx 연동
 # ------------------------------------
+
+# quiz.py
 @quiz_bp.route('/quiz/create', methods=['POST'])
 def create_quiz():
-    db_manager = get_db_manager()
-    if not db_manager:
+    db = get_db_manager()
+    if not db:
         return jsonify({"error": "Database connection is not available."}), 500
 
-    data = request.get_json()
-    if not all(key in data for key in ['title', 'category', 'creator_id', 'questions']):
+    data = request.get_json() or {}
+    required = ['title', 'category', 'questions']
+    if not all(k in data for k in required):
         return jsonify({"error": "Missing required fields for quiz creation."}), 400
 
-    # Frontend의 Mock ID를 실제 DB ID로 처리 (db.py의 add_mock_users와 연동)
-    if data['creator_id'] == 'CurrentUser (Mock)':
-        data['creator_id'] = 'mock_user_1' 
-        
-    try:
-        quiz_id = db_manager.add_quiz_and_questions(data)
-        return jsonify({
-            "message": "Quiz created successfully.",
-            "quiz_id": quiz_id,
-            "creator_id": data['creator_id']
-        }), 201
+    # ✅ (A) 요청 헤더 또는 바디에서 로그인 사용자 ID 확보
+    #   - 헤더 우선: X-User-Id (프론트가 로그인 후 헤더로 넣어줌)
+    #   - 없으면 바디의 creator_id 사용
+    creator_id = (request.headers.get('X-User-Id') or data.get('creator_id') or "").strip()
+    if not creator_id:
+        return jsonify({"error": "creator_id is required (use logged-in user id)."}), 401
 
+    # ✅ (B) 실제 존재하는 유저인지 FK 사전 검증
+    if not db.get_user_by_id(creator_id):
+        return jsonify({"error": f"creator_id '{creator_id}' does not exist."}), 400
+
+    # ✅ (C) 더 이상 mock 치환 금지
+    data['creator_id'] = creator_id
+
+    try:
+        quiz_id = db.add_quiz_and_questions(data)
+        return jsonify({"message": "Quiz created successfully.", "quiz_id": quiz_id}), 201
     except Exception as e:
         logger.error(f"Quiz creation failed: {e}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500
+
+
 
 
 # ------------------------------------
@@ -211,29 +221,124 @@ def get_user_history(user_id):
 # ------------------------------------
 # 7. 랭킹 조회 API (GET /api/ranking) - RankingPage.tsx 연동 (핵심 변경 사항)
 # ------------------------------------
-@quiz_bp.route('/quiz/ranking', methods=['GET'])
-def get_ranking():
-    db_manager = get_db_manager()
-    if not db_manager:
-        return jsonify({"error": "Database connection is not available."}), 500
+# @quiz_bp.route('/ranking', methods=['GET'])
+# def get_ranking():
+#     db_manager = get_db_manager()
+#     if not db_manager:
+#         return jsonify({"error": "Database connection is not available."}), 500
         
-    try:
-        # DB에서 총 점수, 퀴즈 수로 정렬된 사용자 목록을 가져옴
-        ranked_data = db_manager.get_ranking_data()
+#     try:
+#         ranked_data = db_manager.get_ranking_data()
         
-        # DB에서 가져온 데이터를 기반으로 순위를 계산하고 Frontend 규격에 맞춰 포맷팅
-        ranking_list = []
-        # ranked_data가 비어 있으면 이 반복문은 실행되지 않음
-        for index, row in enumerate(ranked_data):
-            ranking_list.append({
-                "rank": index + 1, # 1부터 시작하는 순위 부여
-                "userId": row['userId'],
-                "username": row['username'],
-                "totalScore": round(row['totalScore'] or 0), # 점수를 정수로 반올림
-                "quizCount": row['quizCount']
-            })
+#         # DB에서 가져온 데이터를 기반으로 순위를 계산하고 Frontend 규격에 맞춰 포맷팅
+#         ranking_list = []
+#         for index, row in enumerate(ranked_data):
+#             ranking_list.append({
+#                 "rank": index + 1,
+#                 "userId": row['userId'],
+#                 "username": row['username'],
+#                 "totalScore": round(row['totalScore'] or 0), 
+#                 "quizCount": row['quizCount']
+#             })
             
-        return jsonify(ranking_list), 200 #<-- 빈 리스트일 경우 [] JSON 반환
+#         return jsonify(ranking_list), 200
+#     except Exception as e:
+#         logger.error(f"Ranking fetch failed: {e}")
+#         return jsonify({"error": f"Server error: {str(e)}"}), 500
+# quiz.py
+
+@quiz_bp.route('/ranking', methods=['GET'])
+def get_ranking():
+    db = get_db_manager()
+    if not db:
+        return jsonify({"error": "Database connection is not available."}), 500
+
+    rtype = (request.args.get('type') or 'author').lower()  # 기본 author
+    try:
+        if rtype == 'solver':
+            # 풀이 랭킹: 맞힌 총점 내림차순
+            sql = """
+            SELECT u.id AS userId, u.username,
+                   s.attempts,
+                   s.total_correct     AS solverPoints,
+                   s.total_questions,
+                   s.accuracy
+            FROM v_user_solve_stats s
+            JOIN User u ON u.id = s.user_id
+            ORDER BY s.total_correct DESC, u.username ASC
+            LIMIT 100
+            """
+            rows = db.execute_query(sql)
+
+            # 응답 형태 통일(프론트에서 키만 사용)
+            result = [{
+                "userId": r["userId"],
+                "username": r["username"],
+                "attempts": r["attempts"],
+                "solverPoints": int(r["solverPoints"] or 0),
+                "totalQuestions": int(r["total_questions"] or 0),
+                "accuracy": float(r["accuracy"] or 0),
+            } for r in rows]
+            return jsonify(result), 200
+
+        else:
+            # 출제 랭킹: author_points 내림차순
+            sql = """
+            SELECT u.id AS userId, u.username,
+                   a.quiz_count,
+                   a.question_votes,
+                   a.avg_question_rating,
+                   a.author_points  AS authorPoints
+            FROM v_user_author_stats a
+            JOIN User u ON u.id = a.user_id
+            ORDER BY a.author_points DESC, u.username ASC
+            LIMIT 100
+            """
+            rows = db.execute_query(sql)
+            result = [{
+                "userId": r["userId"],
+                "username": r["username"],
+                "quizCount": int(r["quiz_count"] or 0),
+                "questionVotes": int(r["question_votes"] or 0),
+                "avgQuestionRating": float(r["avg_question_rating"] or 0),
+                "authorPoints": float(r["authorPoints"] or 0),
+            } for r in rows]
+            return jsonify(result), 200
+
     except Exception as e:
-        logger.error(f"Ranking data fetch failed: {e}")
+        logger.error(f"Ranking fetch failed: {e}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500
+    
+@quiz_bp.route('/my/summary/<string:user_id>', methods=['GET'])
+def get_my_summary(user_id):
+        db = get_db_manager()
+        if not db:
+            return jsonify({"error": "Database connection is not available."}), 500
+
+        try:
+            attempts = db.get_user_attempts(user_id) or []
+            created  = db.get_created_quizzes_by_user(user_id) or []
+
+            return jsonify({
+                "attempts": [{
+                    "attemptId": a['attempt_id'],
+                    "userId": a['user_id'],
+                    "quizId": a['quiz_id'],
+                    "score": a['score'],
+                    "totalQuestions": a['total_questions'],
+                    "mode": a['mode'],
+                    "date": a['date'],
+                } for a in attempts],
+                "created": [{
+                    "quizId": c['quiz_id'],
+                    "title": c['title'],
+                    "questionsCount": c['questions_count'],
+                    "votesAvg": float(c['votes_avg'] or 0),
+                    "votesCount": int(c['votes_count'] or 0),
+                    "createdAt": c['created_at'].isoformat() if c['created_at'] else None,
+                } for c in created]
+            }), 200
+        except Exception as e:
+            logger.exception(f"/my/summary failed: {e}")
+            return jsonify({"error": f"Server error: {str(e)}"}), 500
+

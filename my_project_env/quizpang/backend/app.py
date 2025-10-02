@@ -5,9 +5,11 @@ import json
 import logging
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from google import genai
-from google.genai import types
-from google.genai.errors import APIError
+# from google import genai
+# from google.genai import types
+import google.generativeai as genai
+# from google.generativeai import types
+# from google.genai.errors import APIError
 from db import get_db_manager, db_manager # db_manager 전역 변수 임포트
 from auth import auth_bp
 from quiz import quiz_bp # 퀴즈 블루프린트 임포트
@@ -33,7 +35,8 @@ CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
 # 3. Gemini 클라이언트 초기화
 try:
     if GEMINI_API_KEY:
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        # client = genai.Client(api_key=GEMINI_API_KEY)
+        genai.configure(api_key=GEMINI_API_KEY)
     else:
         client = None 
 except Exception as e:
