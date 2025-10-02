@@ -1,0 +1,19 @@
+1번AIPROJECT에서 node -v || winget install -e OpenJS.NodeJS.LTS로 Node 설치
+AIPROJECT-.venv-quizpang-my_project_env-quizpang
+2번-frontend에서 npm ci로 설치하고 npm run dev로 실행
+3번-backend에서
+하나씩(비추천..전 이렇게 해버림)  
+python -m pip install --upgrade pip
+python -m pip install flask
+python -m pip install flask-cors
+python -m pip install google-auth google-auth-httplib2 google-auth-oauthlib google-api-python-client
+pip install python-dotenv
+python -m pip install PyMySQL flask flask-cors python-dotenv google-generativeai
+간단(추천)
+python -m pip install -U pip PyMySQL flask flask-cors python-dotenv google-generativeai
+python -m pip install google-auth google-auth-httplib2 google-auth-oauthlib google-api-python-client
+4번디비버에서 test연결에 quizpang db만들기(....4와 ...4general.ci)
+5번app.py에서 초기화 및 연결 부분에 root와 각자 root 비번으로 설정
+6번backend.env에서도 각자 root 비번으로
+7번python app.py로 백엔드 실행
+(터미널에서 cmd/파워셸/배쉬에서 명령어들이 각각 다를 수 있으니 참고)

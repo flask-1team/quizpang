@@ -104,9 +104,15 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ history, quizzes, currentUser
                                                         <p className="text-xs text-gray-500">점수</p>
                                                     </div>
                                                     <button
-                                                        onClick={() => onSelectQuiz(attempt.quizId)}
+                                                        onClick={() => {
+                                                            if (onSelectQuiz) {
+                                                            onSelectQuiz(attempt.quizId);    // 모달 열기 등
+                                                            } else {
+                                                            onNavigate('quizList');          // 폴백: 목록으로 이동
+                                                            }
+                                                        }}
                                                         className="px-4 py-2 bg-violet-600 text-white font-semibold rounded-lg hover:bg-violet-700 transition duration-150 text-sm whitespace-nowrap"
-                                                    >
+                                                        >
                                                         다시 풀기
                                                     </button>
                                                 </div>

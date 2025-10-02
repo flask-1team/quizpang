@@ -18,31 +18,41 @@ logger = logging.getLogger(__name__)
 # ------------------------------------
 # 1. 퀴즈 생성 API (POST /api/quiz/create) - QuizCreationPage.tsx 연동
 # ------------------------------------
+
+# quiz.py
 @quiz_bp.route('/quiz/create', methods=['POST'])
 def create_quiz():
-    db_manager = get_db_manager()
-    if not db_manager:
+    db = get_db_manager()
+    if not db:
         return jsonify({"error": "Database connection is not available."}), 500
 
-    data = request.get_json()
-    if not all(key in data for key in ['title', 'category', 'creator_id', 'questions']):
+    data = request.get_json() or {}
+    required = ['title', 'category', 'questions']
+    if not all(k in data for k in required):
         return jsonify({"error": "Missing required fields for quiz creation."}), 400
 
-    # Frontend의 Mock ID를 실제 DB ID로 처리 (db.py의 add_mock_users와 연동)
-    if data['creator_id'] == 'CurrentUser (Mock)':
-        data['creator_id'] = 'mock_user_1' 
-        
-    try:
-        quiz_id = db_manager.add_quiz_and_questions(data)
-        return jsonify({
-            "message": "Quiz created successfully.",
-            "quiz_id": quiz_id,
-            "creator_id": data['creator_id']
-        }), 201
+    # ✅ (A) 요청 헤더 또는 바디에서 로그인 사용자 ID 확보
+    #   - 헤더 우선: X-User-Id (프론트가 로그인 후 헤더로 넣어줌)
+    #   - 없으면 바디의 creator_id 사용
+    creator_id = (request.headers.get('X-User-Id') or data.get('creator_id') or "").strip()
+    if not creator_id:
+        return jsonify({"error": "creator_id is required (use logged-in user id)."}), 401
 
+    # ✅ (B) 실제 존재하는 유저인지 FK 사전 검증
+    if not db.get_user_by_id(creator_id):
+        return jsonify({"error": f"creator_id '{creator_id}' does not exist."}), 400
+
+    # ✅ (C) 더 이상 mock 치환 금지
+    data['creator_id'] = creator_id
+
+    try:
+        quiz_id = db.add_quiz_and_questions(data)
+        return jsonify({"message": "Quiz created successfully.", "quiz_id": quiz_id}), 201
     except Exception as e:
         logger.error(f"Quiz creation failed: {e}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500
+
+
 
 
 # ------------------------------------
