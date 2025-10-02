@@ -209,29 +209,31 @@ def get_user_history(user_id):
 
 
 # ------------------------------------
-# 7. 랭킹 조회 API (GET /api/ranking) - RankingPage.tsx 연동
+# 7. 랭킹 조회 API (GET /api/ranking) - RankingPage.tsx 연동 (핵심 변경 사항)
 # ------------------------------------
-@quiz_bp.route('/ranking', methods=['GET'])
+@quiz_bp.route('/quiz/ranking', methods=['GET'])
 def get_ranking():
     db_manager = get_db_manager()
     if not db_manager:
         return jsonify({"error": "Database connection is not available."}), 500
         
     try:
+        # DB에서 총 점수, 퀴즈 수로 정렬된 사용자 목록을 가져옴
         ranked_data = db_manager.get_ranking_data()
         
         # DB에서 가져온 데이터를 기반으로 순위를 계산하고 Frontend 규격에 맞춰 포맷팅
         ranking_list = []
+        # ranked_data가 비어 있으면 이 반복문은 실행되지 않음
         for index, row in enumerate(ranked_data):
             ranking_list.append({
-                "rank": index + 1,
+                "rank": index + 1, # 1부터 시작하는 순위 부여
                 "userId": row['userId'],
                 "username": row['username'],
-                "totalScore": round(row['totalScore'] or 0), 
+                "totalScore": round(row['totalScore'] or 0), # 점수를 정수로 반올림
                 "quizCount": row['quizCount']
             })
             
-        return jsonify(ranking_list), 200
+        return jsonify(ranking_list), 200 #<-- 빈 리스트일 경우 [] JSON 반환
     except Exception as e:
-        logger.error(f"Ranking fetch failed: {e}")
+        logger.error(f"Ranking data fetch failed: {e}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500

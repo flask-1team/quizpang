@@ -7,8 +7,7 @@ from dotenv import load_dotenv
 import pymysql
 from pymysql.cursors import DictCursor
 from datetime import datetime
-import random
-import time
+from typing import Optional, List, Dict, Any, Tuple
 
 # .env 파일에서 환경 변수 로드
 load_dotenv()
@@ -30,12 +29,14 @@ class DBManager:
         self.DB_NAME = os.getenv("DB_NAME", "quizpang")
         self.DB_PORT = int(os.getenv("DB_PORT", 3306))
 
-        self.conn = None
+        # self.conn = None
+        self.conn: Optional[pymysql.Connection] = None
         # 데이터베이스 연결 및 테이블 초기화
         self._initialize_database()
 
-    def _get_connection(self):
-        """데이터베이스 연결을 반환합니다."""
+    # def _get_connection(self):
+    def _get_connection(self) -> pymysql.Connection:
+        """데이터베이스 연결을 반환하거나 새로 생성합니다."""
         if self.conn and self.conn.open:
             return self.conn
         
@@ -324,22 +325,59 @@ class DBManager:
         """
         return self.execute_query(sql, (user_id,))
         
-    def get_ranking_data(self):
-        """랭킹 페이지에 필요한 데이터를 조회합니다. (RankingPage.tsx 로직 연동)"""
-        # 퀴즈 제작자별 (Quiz.creator_id) 퀴즈 평점(votes_avg * votes_count)의 총합을 계산
-        sql = """
-            SELECT 
-                T1.creator_id AS userId,
-                T2.username AS username,
-                SUM(T1.votes_avg * T1.votes_count) AS totalScore,
-                COUNT(T1.quiz_id) AS quizCount
-            FROM Quiz T1
-            JOIN User T2 ON T1.creator_id = T2.id
-            GROUP BY T1.creator_id, T2.username
-            ORDER BY totalScore DESC;
+    # def get_ranking_data(self):
+    #     """랭킹 페이지에 필요한 데이터를 조회합니다. (RankingPage.tsx 로직 연동)"""
+    #     # 퀴즈 제작자별 (Quiz.creator_id) 퀴즈 평점(votes_avg * votes_count)의 총합을 계산
+    #     sql = """
+    #         SELECT 
+    #             T1.creator_id AS userId,
+    #             T2.username AS username,
+    #             SUM(T1.votes_avg * T1.votes_count) AS totalScore,
+    #             COUNT(T1.quiz_id) AS quizCount
+    #         FROM Quiz T1
+    #         JOIN User T2 ON T1.creator_id = T2.id
+    #         GROUP BY T1.creator_id, T2.username
+    #         ORDER BY totalScore DESC;
+    #     """
+    #     # MariaDB는 랭킹을 직접 계산하지 않으므로, 애플리케이션 레벨에서 처리할 수 있도록 점수 데이터만 제공
+    #     return self.execute_query(sql)
+    
+    # ------------------------------------
+    # 3. 랭킹 데이터 조회 (RankingPage.tsx 연동)
+    # ------------------------------------
+    def get_ranking_data(self) -> List[Dict[str, Any]]:
         """
-        # MariaDB는 랭킹을 직접 계산하지 않으므로, 애플리케이션 레벨에서 처리할 수 있도록 점수 데이터만 제공
+        사용자별 총 점수(QuizAttempt 합산)와 생성한 퀴즈 수(quizzes 카운트)를 조회하고
+        총 점수를 기준으로 내림차순 정렬하여 반환합니다.
+        """
+        # 사용자 점수(QuizAttempt)와 생성한 퀴즈 수(quizzes)를 결합하여 조회
+        sql = """
+        SELECT
+         	u.id AS userId,
+            u.username AS username,
+            COALESCE(SUM(qa.score), 0) AS totalScore, -- 총 획득 점수
+            COALESCE(tqc.quizCount, 0) AS quizCount    -- 생성한 퀴즈 수
+        FROM
+            User u
+        LEFT JOIN
+            QuizAttempt qa ON u.id = qa.user_id
+        LEFT JOIN (
+                    -- 각 사용자가 생성한 퀴즈 수를 미리 계산하는 서브쿼리
+                    SELECT 
+                            q.creator_id,
+                            COUNT(q.quiz_id) AS quizCount
+                        FROM Quiz q 
+                        GROUP BY creator_id
+                ) tqc ON u.id = tqc.creator_id
+        GROUP BY
+            u.id, u.username
+        ORDER BY
+                    totalScore DESC, quizCount DESC, username ASC -- 총점 > 퀴즈 수 > 이름 순으로 정렬
+        LIMIT 100; -- 상위 100명만 조회
+        """
+        # execute_query는 fetchall을 반환 (DictCursor 사용)
         return self.execute_query(sql)
+
     
     # ------------------
     # 3. 공통 DB 메서드 (핵심 구현)

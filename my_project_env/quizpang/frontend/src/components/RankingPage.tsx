@@ -1,12 +1,15 @@
-import React from 'react';
-import { Page, Quiz, User } from '../types';
+import React, { useState, useEffect } from 'react';
 
+// Flask 백엔드의 URL (현재 5001 포트에서 실행 중)
+const API_BASE_URL = 'http://localhost:5001';
+
+// RankingPageProps 인터페이스는 이제 API 호출에만 사용되는 onNavigate만 가집니다.
 interface RankingPageProps {
-    quizzes: Quiz[];
-    users: User[];
-    onNavigate: (page: Page) => void;
+    // onNavigate 함수는 페이지 이동 로직에 필요할 수 있으므로 유지합니다.
+    onNavigate: (page: string) => void;
 }
 
+// 백엔드 API에서 받을 데이터 구조 정의
 interface RankedUser {
     rank: number;
     userId: string;
@@ -15,84 +18,137 @@ interface RankedUser {
     quizCount: number;
 }
 
-const RankingPage: React.FC<RankingPageProps> = ({ quizzes, users, onNavigate }) => {
-    // 1. Calculate scores
-    const userScores = new Map<string, { score: number; quizCount: number }>();
-    quizzes.forEach(quiz => {
-        const userStat = userScores.get(quiz.creator_id) || { score: 0, quizCount: 0 };
-        userStat.score += quiz.votes_avg * quiz.votes_count;
-        userStat.quizCount += 1;
-        userScores.set(quiz.creator_id, userStat);
-    });
+const RankingPage: React.FC<RankingPageProps> = ({ onNavigate }) => {
+    // 랭킹 데이터를 저장할 상태
+    const [rankingData, setRankingData] = useState<RankedUser[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    // 2. Map to user data and sort
-    const rankedUsers: RankedUser[] = Array.from(userScores.entries())
-        .map(([userId, stats]) => {
-            const user = users.find(u => u.id === userId);
-            return {
-                userId,
-                username: user ? user.username : '알 수 없는 사용자',
-                totalScore: Math.round(stats.score),
-                quizCount: stats.quizCount,
-            };
-        })
-        .sort((a, b) => b.totalScore - a.totalScore)
-        .map((user, index) => ({ ...user, rank: index + 1 }));
+    // API 호출 함수
+    const fetchRanking = async () => {
+        setIsLoading(true);
+        setError(null);
+        try {
+            // Flask 백엔드의 /api/ranking 엔드포인트 호출
+            // **API_BASE_URL 상수를 사용하여 절대 경로로 호출합니다.**
+            const response = await fetch(`${API_BASE_URL}/api/quiz/ranking`); 
+            
+            if (!response.ok) {
+                // HTTP 상태 코드가 200 범위가 아니면 에러 처리
+                throw new Error(`Failed to fetch ranking (Status: ${response.status})`);
+            }
+            
+            const data: RankedUser[] = await response.json();
+            
+            // NOTE: 백엔드에서 순위가 이미 계산되어 오지만, 프론트엔드에서 rank가 빠진 채 올 경우를 대비해
+            // rank를 추가하는 로직을 추가합니다. (현재 백엔드 코드에서는 rank가 포함되어 옴)
+            const rankedDataWithRank = data.map((user, index) => ({
+                ...user,
+                rank: index + 1
+            }));
 
-    // 3. Helper for medal icons
-    const getMedal = (rank: number) => {
+            setRankingData(rankedDataWithRank);
+        } catch (err) {
+            console.error("Failed to fetch ranking:", err);
+            
+            let errorMessage = "랭킹 데이터를 불러오는 데 실패했습니다. 서버 상태를 확인해주세요.";
+
+            // 'Unexpected token <' 오류 발생 시, 백엔드 실행 여부를 확인하도록 명확히 안내
+            if (err instanceof SyntaxError && String(err).includes("Unexpected token '<'")) {
+                 errorMessage = `🚨 서버 응답 오류: 서버에서 예상치 못한 HTML 문서(JSON이 아님)가 반환되었습니다. Flask 서버(${API_BASE_URL})가 실행 중인지, 그리고 '/api/quiz/ranking' 엔드포인트가 정상 동작하는지 확인해주세요.`;
+            } else if (err instanceof Error) {
+                // API_BASE_URL을 사용하여 오류 메시지 강화
+                errorMessage = `네트워크 또는 HTTP 오류: ${err.message}. (요청 URL: ${API_BASE_URL}/api/ranking)`;
+            }
+
+            // 사용자에게 표시할 에러 메시지 설정
+            setError(errorMessage);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // 컴포넌트 마운트 시 데이터 로드
+    useEffect(() => {
+        fetchRanking();
+    }, []); // 빈 배열: 최초 1회만 실행
+
+    // 랭킹 순위에 따른 메달 이모지 반환 함수
+    const getMedal = (rank: number): string => {
         if (rank === 1) return '🥇';
         if (rank === 2) return '🥈';
         if (rank === 3) return '🥉';
-        return <span className="font-bold text-gray-500">{`#${rank}`}</span>;
+        return rank.toString();
     };
 
-    return (
-        <div className="min-h-screen pt-10 pb-10 bg-gray-50">
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-                <button
-                    className="flex items-center text-gray-600 hover:text-violet-700 mb-6 transition duration-150"
-                    onClick={() => onNavigate('home')}
-                >
-                    <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
-                    </svg>
-                    <span className="font-semibold">홈으로 돌아가기</span>
-                </button>
-                <div className="text-center mb-12">
-                    <h2 className="text-4xl font-extrabold text-gray-900">명예의 전당 🏆</h2>
-                    <p className="mt-4 text-xl text-gray-600">최고의 퀴즈 마스터들을 만나보세요!</p>
-                </div>
+    if (isLoading) {
+        return (
+            <div className="flex justify-center items-center h-full min-h-screen">
+                <div className="text-xl text-gray-600">랭킹 데이터 로딩 중...</div>
+            </div>
+        );
+    }
 
-                <div className="bg-white p-6 rounded-xl shadow-2xl">
-                    {rankedUsers.length > 0 ? (
-                        <ul className="space-y-4">
-                            {rankedUsers.map((user) => (
+    if (error) {
+         return (
+            <div className="flex justify-center items-center h-full min-h-screen">
+                <div className="text-xl text-red-500 p-8 rounded-lg bg-red-100 border border-red-400 text-center max-w-lg mx-auto">
+                    <p>🚨 오류 발생</p>
+                    <p className="text-sm text-red-700 mt-3 whitespace-pre-wrap">{error}</p>
+                    <p className="text-sm text-red-400 mt-4 font-bold">🛠️ 해결 방법: 백엔드 서버(app.py)를 실행(재실행)하고 새로고침하세요.</p>
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-gray-50 p-4 sm:p-8">
+            <div className="max-w-3xl mx-auto bg-white shadow-2xl rounded-xl p-6">
+                <h1 className="text-3xl font-extrabold text-center text-violet-700 mb-6">🏆 퀴즈 랭킹 보드</h1>
+                <p className="text-center text-gray-500 mb-8">
+                    총 획득 점수 기준으로 순위가 매겨집니다. 당신의 퀴즈 실력을 뽐내보세요!
+                </p>
+
+                <div className="space-y-4">
+                    {rankingData.length > 0 ? (
+                        <ul className="divide-y divide-gray-200">
+                            {rankingData.map((user) => (
                                 <li
                                     key={user.userId}
-                                    className={`p-4 rounded-lg flex items-center justify-between transition-all duration-300 ${
-                                        user.rank === 1 ? 'bg-yellow-100 border-2 border-yellow-400 transform scale-105' :
-                                        user.rank === 2 ? 'bg-gray-200 border-2 border-gray-400' :
-                                        user.rank === 3 ? 'bg-orange-200 border-2 border-orange-400' :
-                                        'bg-gray-50 border'
-                                    }`}
+                                    className={`
+                                        flex justify-between items-center p-4 rounded-xl transition duration-300
+                                        ${
+                                            user.rank === 1 ? 'bg-yellow-100 border-2 border-yellow-500 scale-[1.02]' :
+                                            user.rank === 2 ? 'bg-gray-200 border-2 border-gray-400' :
+                                            user.rank === 3 ? 'bg-orange-200 border-2 border-orange-400' :
+                                            'bg-white border hover:bg-gray-50'
+                                        }`
+                                    }
                                 >
                                     <div className="flex items-center space-x-4">
-                                        <span className="text-2xl w-12 text-center">{getMedal(user.rank)}</span>
+                                        <span className="text-3xl w-10 text-center font-black">
+                                            {getMedal(user.rank)}
+                                        </span>
                                         <div>
                                             <p className="text-lg font-bold text-gray-800">{user.username}</p>
-                                            <p className="text-sm text-gray-500">{user.quizCount}개의 퀴즈 제작</p>
+                                            <p className="text-sm text-gray-500">
+                                                제작 퀴즈: {user.quizCount}개
+                                            </p>
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-xl font-extrabold text-violet-700">{user.totalScore.toLocaleString()}</p>
-                                        <p className="text-xs text-gray-500">총 점수</p>
+                                        <p className="text-2xl font-extrabold text-violet-700">
+                                            {user.totalScore.toLocaleString()}
+                                        </p>
+                                        <p className="text-xs text-gray-500 mt-1">총 획득 점수</p>
                                     </div>
                                 </li>
                             ))}
                         </ul>
                     ) : (
-                         <p className="text-gray-500 text-center py-10">아직 랭킹에 등록된 사용자가 없습니다.</p>
+                         <p className="text-gray-500 text-center py-10">
+                            아직 랭킹에 등록된 사용자가 없습니다. 퀴즈를 풀고 점수를 획득해 보세요!
+                         </p>
                     )}
                 </div>
             </div>
