@@ -1,1 +1,3 @@
 my_project_env/quizpang/backend/.env
+*.pyc
+__pycache__/
