@@ -221,27 +221,90 @@ def get_user_history(user_id):
 # ------------------------------------
 # 7. 랭킹 조회 API (GET /api/ranking) - RankingPage.tsx 연동
 # ------------------------------------
+# @quiz_bp.route('/ranking', methods=['GET'])
+# def get_ranking():
+#     db_manager = get_db_manager()
+#     if not db_manager:
+#         return jsonify({"error": "Database connection is not available."}), 500
+        
+#     try:
+#         ranked_data = db_manager.get_ranking_data()
+        
+#         # DB에서 가져온 데이터를 기반으로 순위를 계산하고 Frontend 규격에 맞춰 포맷팅
+#         ranking_list = []
+#         for index, row in enumerate(ranked_data):
+#             ranking_list.append({
+#                 "rank": index + 1,
+#                 "userId": row['userId'],
+#                 "username": row['username'],
+#                 "totalScore": round(row['totalScore'] or 0), 
+#                 "quizCount": row['quizCount']
+#             })
+            
+#         return jsonify(ranking_list), 200
+#     except Exception as e:
+#         logger.error(f"Ranking fetch failed: {e}")
+#         return jsonify({"error": f"Server error: {str(e)}"}), 500
+# quiz.py
+
 @quiz_bp.route('/ranking', methods=['GET'])
 def get_ranking():
-    db_manager = get_db_manager()
-    if not db_manager:
+    db = get_db_manager()
+    if not db:
         return jsonify({"error": "Database connection is not available."}), 500
-        
+
+    rtype = (request.args.get('type') or 'author').lower()  # 기본 author
     try:
-        ranked_data = db_manager.get_ranking_data()
-        
-        # DB에서 가져온 데이터를 기반으로 순위를 계산하고 Frontend 규격에 맞춰 포맷팅
-        ranking_list = []
-        for index, row in enumerate(ranked_data):
-            ranking_list.append({
-                "rank": index + 1,
-                "userId": row['userId'],
-                "username": row['username'],
-                "totalScore": round(row['totalScore'] or 0), 
-                "quizCount": row['quizCount']
-            })
-            
-        return jsonify(ranking_list), 200
+        if rtype == 'solver':
+            # 풀이 랭킹: 맞힌 총점 내림차순
+            sql = """
+            SELECT u.id AS userId, u.username,
+                   s.attempts,
+                   s.total_correct     AS solverPoints,
+                   s.total_questions,
+                   s.accuracy
+            FROM v_user_solve_stats s
+            JOIN User u ON u.id = s.user_id
+            ORDER BY s.total_correct DESC, u.username ASC
+            LIMIT 100
+            """
+            rows = db.execute_query(sql)
+
+            # 응답 형태 통일(프론트에서 키만 사용)
+            result = [{
+                "userId": r["userId"],
+                "username": r["username"],
+                "attempts": r["attempts"],
+                "solverPoints": int(r["solverPoints"] or 0),
+                "totalQuestions": int(r["total_questions"] or 0),
+                "accuracy": float(r["accuracy"] or 0),
+            } for r in rows]
+            return jsonify(result), 200
+
+        else:
+            # 출제 랭킹: author_points 내림차순
+            sql = """
+            SELECT u.id AS userId, u.username,
+                   a.quiz_count,
+                   a.question_votes,
+                   a.avg_question_rating,
+                   a.author_points  AS authorPoints
+            FROM v_user_author_stats a
+            JOIN User u ON u.id = a.user_id
+            ORDER BY a.author_points DESC, u.username ASC
+            LIMIT 100
+            """
+            rows = db.execute_query(sql)
+            result = [{
+                "userId": r["userId"],
+                "username": r["username"],
+                "quizCount": int(r["quiz_count"] or 0),
+                "questionVotes": int(r["question_votes"] or 0),
+                "avgQuestionRating": float(r["avg_question_rating"] or 0),
+                "authorPoints": float(r["authorPoints"] or 0),
+            } for r in rows]
+            return jsonify(result), 200
+
     except Exception as e:
         logger.error(f"Ranking fetch failed: {e}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500

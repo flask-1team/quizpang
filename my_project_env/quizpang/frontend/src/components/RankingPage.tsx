@@ -1,5 +1,5 @@
 import React from 'react';
-import { Page, Quiz, User } from '../types';
+import { Page, Quiz, User } from '../../types';
 
 interface RankingPageProps {
     quizzes: Quiz[];
