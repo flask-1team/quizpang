@@ -154,6 +154,11 @@ def rate_question():
         
     try:
         new_avg = db_manager.update_question_rating(question_id, rating)
+         # ✅ 방금 평가된 문항이 속한 퀴즈 집계 갱신
+        quiz_id = db_manager.get_quiz_id_by_question(question_id)
+        if quiz_id:
+            db_manager.recompute_quiz_rating(quiz_id)
+            
         return jsonify({"message": "Rating updated successfully.", "new_avg": new_avg}), 200
     except ValueError as ve:
         return jsonify({"error": str(ve)}), 404

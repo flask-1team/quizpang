@@ -1,5 +1,5 @@
 # db.py (MariaDB / PyMySQL 기반)
-
+import time
 import os
 import logging
 import json
@@ -261,6 +261,33 @@ class DBManager:
             logger.error(f"퀴즈 및 문제 저장 트랜잭션 실패: {e}")
             conn.rollback()
             raise
+    # db_manager.py (또는 db.py)에 추가)
+
+    def get_quiz_id_by_question(self, question_id: int):
+        sql = "SELECT quiz_id FROM question WHERE id = %s"
+        row = self.execute_query(sql, (question_id,), fetchone=True)  # ← 여기!
+        return row['quiz_id'] if row else None
+
+    def recompute_quiz_rating(self, quiz_id: int):
+        sql = """
+        UPDATE quiz q
+        JOIN (
+        SELECT
+            quiz_id,
+            SUM(COALESCE(votes_avg,0) * COALESCE(votes_count,0)) / NULLIF(SUM(COALESCE(votes_count,0)), 0) AS avg_rating,
+            SUM(COALESCE(votes_count,0)) AS total_votes
+        FROM question
+        WHERE quiz_id = %s
+        GROUP BY quiz_id
+        ) x ON x.quiz_id = q.quiz_id
+        SET
+        q.votes_avg   = ROUND(COALESCE(x.avg_rating, 0), 1),
+        q.votes_count = COALESCE(x.total_votes, 0)
+        """
+        self.execute_non_query(sql, (quiz_id,))  # ← 여기!
+
+
+
  
     def get_created_quizzes_by_user(self, user_id: str):
         sql = """
