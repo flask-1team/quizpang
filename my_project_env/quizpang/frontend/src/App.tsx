@@ -90,7 +90,8 @@ const App: React.FC = () => {
     // ✅ 변경
     const [questions, setQuestions] = useState<Record<number, Question[]>>({});
     const [users, setUsers] = useState<User[]>(mockUsers);
-    const [quizHistory, setQuizHistory] = useState<QuizAttempt[]>(mockHistory);
+    //const [quizHistory, setQuizHistory] = useState<QuizAttempt[]>(mockHistory);
+    const [quizHistory, setQuizHistory] = useState<QuizAttempt[]>([]);
 
 
     //const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -101,7 +102,23 @@ const App: React.FC = () => {
     const [currentUserName, setCurrentUserName] = useState<string | null>(null);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-        // 앱 시작 시 로컬스토리지에서 로그인 상태 복원
+        // 2) 로더 함수 추가
+    const loadHistory = async (uid: string) => {
+    try {
+        const res = await fetch(`http://localhost:5001/api/history/${uid}`);
+        if (res.ok) {
+        const data: QuizAttempt[] = await res.json();
+        setQuizHistory(data);
+        } else {
+        console.error('history fetch failed', await res.text());
+        }
+    } catch (e) {
+        console.error(e);
+    }
+    };
+
+
+        // 3) 앱 시작 시 로그인 복원되면 히스토리도 불러오기
     useEffect(() => {
         const uid = localStorage.getItem('qp.user_id');
         const uname = localStorage.getItem('qp.username');
@@ -109,6 +126,8 @@ const App: React.FC = () => {
             setIsLoggedIn(true);
             setCurrentUserId(uid);
             setCurrentUserName(uname);
+            // ✅ 복원되면 서버 히스토리도 즉시 로드
+            loadHistory(uid);
         }
     }, []);
 
@@ -131,6 +150,14 @@ const App: React.FC = () => {
     useEffect(() => {
         loadQuizzes();          // ✅ 앱 시작할 때 서버 목록으로 동기화
     }, []);
+
+    // 5) history 화면으로 들어갈 때 보장 로딩
+    useEffect(() => {
+        if (page === 'history') {
+            const uid = currentUserId || localStorage.getItem('qp.user_id');
+            if (uid) loadHistory(uid);        // ✅ 추가
+        }
+    }, [page, currentUserId]);
 
 
     // 서버에서 퀴즈 목록 가져오기
@@ -178,12 +205,13 @@ const App: React.FC = () => {
     };
     
    
+    // 4) 로그인 성공 시에도 로드
     const handleLogin = (username: string) => {
-        // LoginPage에서 로그인 성공 시 localStorage에 이미 저장했다고 가정
-        const uid = localStorage.getItem('qp.user_id');   // 백엔드 응답의 user_id
+        const uid = localStorage.getItem('qp.user_id'); // 백엔드가 저장해둔 것
         setIsLoggedIn(true);
         setCurrentUserName(username);
         setCurrentUserId(uid || null);
+        if (uid) loadHistory(uid);          // ✅ 추가
         showCustomAlert(`${username}님, 환영합니다!`);
         handleNavigate('home');
     };

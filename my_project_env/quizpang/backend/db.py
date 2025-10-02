@@ -30,29 +30,47 @@ class DBManager:
         self.DB_NAME = os.getenv("DB_NAME", "quizpang")
         self.DB_PORT = int(os.getenv("DB_PORT", 3306))
 
-        self.conn = None
+        # self.conn = None
         # 데이터베이스 연결 및 테이블 초기화
         self._initialize_database()
 
-    def _get_connection(self):
-        """데이터베이스 연결을 반환합니다."""
-        if self.conn and self.conn.open:
-            return self.conn
+    # def _get_connection(self):
+    #     """데이터베이스 연결을 반환합니다."""
+    #     if self.conn and self.conn.open:
+    #         return self.conn
         
+    #     try:
+    #         self.conn = pymysql.connect(
+    #             host=self.DB_HOST,
+    #             user=self.DB_USER,
+    #             password=self.DB_PASSWORD,
+    #             database=self.DB_NAME,
+    #             port=self.DB_PORT,
+    #             cursorclass=DictCursor # 딕셔너리 형태로 결과를 반환하도록 설정
+    #         )
+    #         return self.conn
+    #     except pymysql.Error as e:
+    #         logger.error(f"MariaDB 연결 실패: {e}")
+    #         raise
+    def _get_connection(self):
+        """요청/쿼리마다 새 커넥션 생성."""
+        conn = pymysql.connect(
+            host=self.DB_HOST,
+            user=self.DB_USER,
+            password=self.DB_PASSWORD,
+            database=self.DB_NAME,
+            port=self.DB_PORT,
+            cursorclass=DictCursor,
+            autocommit=True,              # ✅ 자동 커밋
+            charset="utf8mb4"
+        )
+        # 유휴 연결 재연결 안전장치
         try:
-            self.conn = pymysql.connect(
-                host=self.DB_HOST,
-                user=self.DB_USER,
-                password=self.DB_PASSWORD,
-                database=self.DB_NAME,
-                port=self.DB_PORT,
-                cursorclass=DictCursor # 딕셔너리 형태로 결과를 반환하도록 설정
-            )
-            return self.conn
-        except pymysql.Error as e:
-            logger.error(f"MariaDB 연결 실패: {e}")
-            raise
-
+            conn.ping(reconnect=True)
+        except Exception:
+            pass
+        return conn
+    
     # ------------------
     # 2. 테이블 생성 SQL 및 초기화
     # ------------------
@@ -137,6 +155,8 @@ class DBManager:
             logger.error(f"테이블 생성 오류: {e}")
             conn.rollback()
             raise
+        finally:
+            conn.close()
         
         # Mock User 데이터 생성 (frontend `creator_id: 'CurrentUser (Mock)'` 대응)
         # self.add_mock_users()
@@ -288,23 +308,30 @@ class DBManager:
 
 
     
+    
     def update_question_rating(self, question_id: int, rating: int):
-        # (avg * count + rating) / (count + 1)
-        update_sql = """
-            UPDATE Question
-            SET votes_avg = (votes_avg * votes_count + %s) / (votes_count + 1),
-                votes_count = votes_count + 1
-            WHERE id = %s
-        """
-        self.execute_non_query(update_sql, (rating, question_id))
+        conn = self._get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT votes_avg, votes_count FROM Question WHERE id=%s",
+                    (question_id,)
+                )
+                row = cursor.fetchone()
+                if not row:
+                    raise ValueError("Question not found")
 
-        # 갱신된 평균을 다시 읽어서 반환
-        row = self.execute_query(
-            "SELECT votes_avg FROM Question WHERE id = %s",
-            (question_id,), fetchone=True
-        )
-        return row["votes_avg"] if row else None
+                new_count = (row["votes_count"] or 0) + 1
+                new_avg = ((row["votes_avg"] or 0) * (row["votes_count"] or 0) + rating) / new_count
 
+                cursor.execute(
+                    "UPDATE Question SET votes_avg=%s, votes_count=%s WHERE id=%s",
+                    (new_avg, new_count, question_id)
+                )
+            conn.commit()
+            return new_avg
+        finally:
+            conn.close()
 
 
 
@@ -385,6 +412,8 @@ class DBManager:
             logger.error(f"Non-Query 실행 실패: {sql}, 오류: {e}")
             conn.rollback()
             raise
+        finally:
+            conn.close()
 
 
 # 싱글톤 패턴을 위한 전역 변수
