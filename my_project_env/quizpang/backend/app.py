@@ -30,7 +30,7 @@ if not GEMINI_API_KEY:
 # 2. Flask 애플리케이션 초기화 및 CORS 설정
 app = Flask(__name__)
 # 프론트엔드(Vite 개발 서버)의 요청을 허용합니다.
-CORS(app, resources={r"/*": {"origins": "http://localhost:5173"}})
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # 3. Gemini 클라이언트 초기화
 try:
