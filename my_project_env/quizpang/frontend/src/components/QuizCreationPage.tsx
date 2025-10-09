@@ -256,6 +256,8 @@ import QuestionEditor from './QuestionEditor';
 // ✅ 환경변수 우선, 없으면 5001
 const API_BASE_URL = 'http://localhost:5001';
 
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
+
 interface QuizCreationPageProps {
   onSaveQuiz: (newQuiz: Quiz, newQuestions: Question[]) => void;
   onNavigate: (page: Page) => void;
@@ -361,7 +363,7 @@ const QuizCreationPage: React.FC<QuizCreationPageProps> = ({ onSaveQuiz, onNavig
     };
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/quiz/create`, {
+      const res = await fetch(`${API_BASE}/api/quiz/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
