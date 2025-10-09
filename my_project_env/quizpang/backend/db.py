@@ -173,40 +173,34 @@ class DBManager:
             
     def get_user_by_id(self, user_id: str):
         """사용자 ID로 사용자 정보를 조회합니다."""
-        sql = "SELECT id, username, email FROM user WHERE id = %s"
+        sql = "SELECT id, username, email FROM `User` WHERE id = %s"
         user = self.execute_query(sql, (user_id,), fetchone=True)
         return user
         
     def get_user_by_email(self, email: str):
         """이메일 주소로 사용자 정보를 조회합니다."""
-        sql = "SELECT id, username, email, password_hash FROM user WHERE email = %s"
+        sql = "SELECT id, username, email, password_hash FROM `User` WHERE email = %s"
         # execute_query는 DBManager 클래스에 이미 정의되어 있습니다.
         # 이 메서드를 호출하여 쿼리를 실행합니다.
         user = self.execute_query(sql, (email,), fetchone=True)
         return user
     
-    def create_user(self,new_user_id, username: str, email: str, password_hash: str) -> int:
-        """새로운 사용자를 생성하고 ID를 반환합니다."""
+    def create_user(self, new_user_id: str, username: str, email: str, password_hash: str) -> str:
+        """새로운 사용자를 생성하고 생성한 문자열 ID를 반환합니다."""
         try:
-
             # 이메일 중복 확인
             if self.get_user_by_email(email):
                 raise ValueError(f"Email '{email}' already exists.")
-                
-            sql = "INSERT INTO user (id ,username, email, password_hash) VALUES (%s,%s, %s, %s)"
-            self.execute_non_query(sql, (new_user_id,username, email, password_hash))
-            
-            # 마지막으로 삽입된 ID 반환
-            conn = self._get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT LAST_INSERT_ID()")
-                return cursor.fetchone()['LAST_INSERT_ID()']
-                
+    
+            sql = "INSERT INTO `User` (id, username, email, password_hash) VALUES (%s, %s, %s, %s)"
+            self.execute_non_query(sql, (new_user_id, username, email, password_hash))
+    
+            return new_user_id
         except pymysql.err.IntegrityError as e:
-            # UNIQUE 제약 조건 오류 등 처리
-            if 'for key \'email\'' in str(e):
+            if "for key 'email'" in str(e):
                 raise ValueError(f"Email '{email}' already exists.")
             raise
+
 
 
         
