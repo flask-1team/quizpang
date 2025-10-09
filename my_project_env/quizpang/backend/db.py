@@ -213,7 +213,7 @@ class DBManager:
         try:
             with conn.cursor() as cursor:
                 quiz_sql = """
-                    INSERT INTO `quiz` (title, category, creator_id, questions_count)
+                    INSERT INTO `Quiz` (title, category, creator_id, questions_count)
                     VALUES (%s, %s, %s, %s)
                 """
                 cursor.execute(
@@ -224,7 +224,7 @@ class DBManager:
 
                 # ✅ options 처리: 프론트가 문자열로 주면 그대로, 파이썬 list/dict면 dumps
                 question_sql = """
-                    INSERT INTO `question`
+                    INSERT INTO `Question`
                     (quiz_id, type, text, options, correct_answer, explanation)
                     VALUES (%s, %s, %s, %s, %s, %s)
                 """
@@ -258,19 +258,19 @@ class DBManager:
     # db_manager.py (또는 db.py)에 추가)
 
     def get_quiz_id_by_question(self, question_id: int):
-        sql = "SELECT quiz_id FROM question WHERE id = %s"
+        sql = "SELECT quiz_id FROM `Question` WHERE id = %s"
         row = self.execute_query(sql, (question_id,), fetchone=True)  # ← 여기!
         return row['quiz_id'] if row else None
 
     def recompute_quiz_rating(self, quiz_id: int):
         sql = """
-        UPDATE quiz q
+        UPDATE `Quiz` q
         JOIN (
         SELECT
             quiz_id,
             SUM(COALESCE(votes_avg,0) * COALESCE(votes_count,0)) / NULLIF(SUM(COALESCE(votes_count,0)), 0) AS avg_rating,
             SUM(COALESCE(votes_count,0)) AS total_votes
-        FROM question
+        FROM `Question`
         WHERE quiz_id = %s
         GROUP BY quiz_id
         ) x ON x.quiz_id = q.quiz_id
