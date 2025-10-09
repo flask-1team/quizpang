@@ -17,6 +17,10 @@ import RankingPage from './components/RankingPage';
 import HistoryPage from './components/HistoryPage';
 import ModeSelectionModal from './components/ModeSelectionModal';
 
+// App.tsx 맨 위 import들 아래쯤에 추가
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
+
+
 
 // Mock Data (생략... 동일)
 const mockUsers: User[] = [
@@ -105,7 +109,7 @@ const App: React.FC = () => {
         // 2) 로더 함수 추가
     const loadHistory = async (uid: string) => {
     try {
-        const res = await fetch(`http://localhost:5001/api/history/${uid}`);
+        const res = await fetch(`${API_BASE}/api/history/${uid}`);
         if (res.ok) {
         const data: QuizAttempt[] = await res.json();
         setQuizHistory(data);
@@ -163,7 +167,7 @@ const App: React.FC = () => {
     // 서버에서 퀴즈 목록 가져오기
   const loadQuizzes = async () => {
     try {
-      const res = await fetch(`http://localhost:5001/api/quiz/list`);
+      const res = await fetch(`${API_BASE}/api/quiz/list`);
       if (res.ok) {
         const list: Quiz[] = await res.json();
         setQuizzes(list);
@@ -179,7 +183,7 @@ const App: React.FC = () => {
     // 이미 로드해둔 경우 재요청 생략
     if (questions[quizId]?.length) return;
 
-    const res = await fetch(`http://localhost:5001/api/quiz/${quizId}/questions`);
+    const res = await fetch(`${API_BASE}/api/quiz/${quizId}/questions`);
     if (!res.ok) {
         console.error('loadQuestions failed', await res.text());
         showCustomAlert('문제를 불러오지 못했습니다.');
@@ -245,7 +249,7 @@ const App: React.FC = () => {
     const handleRateQuestion = async (quizId: number, questionId: number, rating: number) => {
         try {
             // 1) 서버에 반영
-            const res = await fetch('http://localhost:5001/api/question/rate', {
+            const res = await fetch(`${API_BASE}/api/question/rate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ questionId, rating }),
@@ -282,7 +286,7 @@ const App: React.FC = () => {
 
         try {
             // ✅ 백엔드에 기록 저장 (학습/시험 모드 모두 저장)
-            const res = await fetch('http://localhost:5001/api/attempt/save', {
+            const res = await fetch(`${API_BASE}/api/attempt/save`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -301,7 +305,7 @@ const App: React.FC = () => {
             }
 
             // ✅ 저장 후 내 기록 다시 불러오기
-            const histRes = await fetch(`http://localhost:5001/api/history/${uid}`);
+            const histRes = await fetch(`${API_BASE}/api/history/${uid}`);
             if (histRes.ok) {
             const historyFromServer = await histRes.json();
             setQuizHistory(historyFromServer); // 서버 규격과 동일한 필드로 내려온다고 가정
