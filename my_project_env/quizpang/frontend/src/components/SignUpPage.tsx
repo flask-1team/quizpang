@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Page } from '../../types';
 
-// Flask 백엔드의 URL (현재 5001 포트에서 실행 중)
+//// Flask 백엔드의 URL (현재 5001 포트에서 실행 중)
 const API_BASE_URL = 'http://localhost:5001';
 
 const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
