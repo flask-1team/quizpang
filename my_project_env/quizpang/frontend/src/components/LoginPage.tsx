@@ -116,6 +116,8 @@ import { Page } from '../../types';
 // ✅ Vite 환경변수 우선, 없으면 5001
 const API_BASE_URL = 'http://localhost:5001';
 
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
+
 interface LoginPageProps {
   onLogin: (username: string) => void;
   onNavigate: (page: Page) => void;
@@ -138,7 +140,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, onNavigate, showCustomAl
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         // credentials: 'include', // 세션 쿠키 방식이면 주석 해제
