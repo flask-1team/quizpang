@@ -4,6 +4,8 @@ import { Page } from '../../types';
 // Flask 백엔드의 URL (현재 5001 포트에서 실행 중)
 const API_BASE_URL = 'http://localhost:5001';
 
+const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '');
+
 interface SignUpPageProps {
     onSignUp: (username: string) => void;
     onNavigate: (page: Page) => void;
@@ -42,7 +44,7 @@ const SignUpPage: React.FC<SignUpPageProps> = ({ onSignUp, onNavigate, showCusto
 
         try {
             // 수정된 백엔드 API 경로: /api/auth/signup 사용
-            const response = await fetch(`${API_BASE_URL}/api/auth/signup`, {
+            const response = await fetch(`${API_BASE}/api/auth/signup`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
